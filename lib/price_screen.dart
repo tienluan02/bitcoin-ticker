@@ -1,10 +1,8 @@
-import 'dart:convert';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'coin_data.dart';
 import 'dart:io' show Platform;
-import 'package:http/http.dart' as http;
+import 'network.dart';
 
 class PriceScreen extends StatefulWidget {
   @override
@@ -12,55 +10,92 @@ class PriceScreen extends StatefulWidget {
 }
 
 class _PriceScreenState extends State<PriceScreen> {
-
   @override
   void initState() {
     super.initState();
-    getCurrencyData('BTC', selectedCurrency);
+    fetchAllExchangeRates(); // Fetch initial exchange rate on app start
   }
 
-  String selectedCurrency = 'USD';
-  final String keyApi = 'bbcb56d1-4994-4c2a-b24e-1e9d99d0036f';
+  String selectedCurrency = 'AUD';
+  String crypto = 'BTC';
+  Map<String, double> exchangeRate = {}; // Use nullable double to handle null cases
+  final String keyApi =
+      'bbcb56d1-4994-4c2a-b24e-1e9d99d0036f'; // Replace with your actual API key
+  final String url = 'https://api-realtime.exrates.coinapi.io/v1/exchangerate';
+
+  // Fetch the exchange rate and update state
+  Future<void> fetchAllExchangeRates() async {
+    try {
+      for (String crypto in cryptoList) {
+        final rate = await Network(url, keyApi).getCurrencyData(crypto, selectedCurrency);
+        setState(() {
+          exchangeRate[crypto] = rate['rate']; // Store the rate for each crypto
+        });
+      }
+    } catch (e) {
+      print('Error fetching exchange rates: $e');
+      setState(() {
+        for (String crypto in cryptoList) {
+          exchangeRate[crypto] = 0.0; // Default to 0 if there's an error
+        }
+      });
+    }
+  }
+
+  Future<void> fetchExchangeRate(String crypto) async {
+    try {
+      final rate = await Network(url, keyApi).getCurrencyData(crypto, selectedCurrency);
+      setState(() {
+        exchangeRate[crypto] = rate['rate'];
+      });
+    } catch (e) {
+      print('Error fetching exchange rate for $crypto: $e');
+      setState(() {
+        exchangeRate[crypto] = 0.0; // Default to 0 if there's an error
+      });
+    }
+  }
 
   Widget getAndroidButton() {
-    List<DropdownMenuItem<String>> DropDownItem = [];
+    List<DropdownMenuItem<String>> dropdownItems = [];
     for (String currency in currenciesList) {
-      DropdownMenuItem<String> newCurrency = DropdownMenuItem(
+      var newCurrency = DropdownMenuItem(
         child: Text(currency),
         value: currency,
       );
-      DropDownItem.add(newCurrency);
+      dropdownItems.add(newCurrency);
     }
     return DropdownButton<String>(
       value: selectedCurrency,
-      items: DropDownItem,
+      items: dropdownItems,
       onChanged: (String? newValue) {
         setState(() {
           selectedCurrency = newValue!;
         });
+        fetchAllExchangeRates(); // Fetch new rate when currency changes
       },
     );
   }
 
   Widget getIosButton() {
-    List<Widget> ScrollItem = [];
+    List<Widget> scrollItems = [];
     for (String currency in currenciesList) {
-      ScrollItem.add(Text(currency));
+      scrollItems.add(Text(currency));
     }
     return CupertinoPicker(
       backgroundColor: Colors.lightBlue,
       itemExtent: 32,
       onSelectedItemChanged: (selectedIndex) {
-        print(selectedIndex);
         setState(() {
           selectedCurrency = currenciesList[selectedIndex];
         });
+        fetchAllExchangeRates(); // Fetch new rate after updating selectedCurrency
       },
-      children: ScrollItem,
+      children: scrollItems,
     );
   }
 
-  Widget AndroidOrIos() {
+  Widget androidOrIos() {
     if (Platform.isIOS) {
       return getIosButton();
     } else {
@@ -68,26 +103,35 @@ class _PriceScreenState extends State<PriceScreen> {
     }
   }
 
-  Future<double> getCurrencyData(
-      String firstCurrency, String secondCurrency) async {
-    var url = await Uri.parse(
-        'https://api-realtime.exrates.coinapi.io/v1/exchangerate/$firstCurrency/$secondCurrency');
-    try {
-      final response = await http.get(
-        url,
-        headers: {
-          'X-CoinAPI-Key': keyApi,
-        },
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['rate'] as double;
-      } else {
-        throw Exception('Failed to load exchange rate: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Error fetching exchange rate: $e');
+  Column displayContainer() {
+    List<Widget> cards = [];
+    for (String crypto in cryptoList) {
+      cards.add(Padding(
+        padding: EdgeInsets.fromLTRB(18.0, 18.0, 18.0, 0),
+        child: Card(
+          color: Colors.lightBlueAccent,
+          elevation: 5.0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 15.0, horizontal: 28.0),
+            child: Text(
+              '1 $crypto = ${exchangeRate[crypto]?.toStringAsFixed(2) ?? 'Loading...'} $selectedCurrency',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20.0,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ));
     }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: cards,
+    );
   }
 
   @override
@@ -101,33 +145,17 @@ class _PriceScreenState extends State<PriceScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Padding(
-            padding: EdgeInsets.fromLTRB(18.0, 18.0, 18.0, 0),
-            child: Card(
-              color: Colors.lightBlueAccent,
-              elevation: 5.0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10.0),
-              ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 15.0, horizontal: 28.0),
-                child: Text(
-                  '1 BTC = ? $selectedCurrency',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 20.0,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
+          Column(
+            children: [
+              displayContainer(),
+            ],
           ),
           Container(
             height: 150.0,
             alignment: Alignment.center,
             padding: EdgeInsets.only(bottom: 30.0),
             color: Colors.lightBlue,
-            child: AndroidOrIos(),
+            child: androidOrIos(),
           ),
         ],
       ),
